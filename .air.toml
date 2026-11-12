@@ -1,0 +1,12 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/bot ."
+bin = "./tmp/bot"
+include_ext = ["go"]
+exclude_dir = ["tmp", "docs", ".superpowers"]
+delay = 1000
+
+[log]
+time = true
