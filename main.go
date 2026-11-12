@@ -21,16 +21,19 @@ func main() {
 	}
 	s.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages
 
-	if err := commands.Register(s, cfg.GuildID); err != nil {
-		log.Fatalf("register commands: %v", err)
-	}
-
+	ready := make(chan struct{})
 	s.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
 		log.Printf("bot ready sebagai %s (env=%s)", r.User.String(), cfg.Env)
+		close(ready)
 	})
 
 	if err := s.Open(); err != nil {
 		log.Fatalf("open gateway: %v", err)
+	}
+
+	<-ready // tunggu READY supaya s.State.User terisi
+	if err := commands.Register(s, cfg.GuildID); err != nil {
+		log.Fatalf("register commands: %v", err)
 	}
 	log.Println("bot berjalan, Ctrl+C untuk stop")
 	select {} // block forever; tipikal bot discordgo

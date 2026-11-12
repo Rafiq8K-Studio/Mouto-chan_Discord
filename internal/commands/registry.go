@@ -17,8 +17,6 @@ var modules = []struct {
 }
 
 func Register(s *discordgo.Session, guildID string) error {
-	registeredCmds := make([]*discordgo.ApplicationCommand, 0, len(modules))
-
 	s.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if i.Type != discordgo.InteractionApplicationCommand {
 			return
@@ -42,7 +40,6 @@ func Register(s *discordgo.Session, guildID string) error {
 		if err != nil {
 			return err
 		}
-		registeredCmds = append(registeredCmds, cmd)
 		log.Printf("slash command terdaftar: /%s", cmd.Name)
 	}
 	return nil
