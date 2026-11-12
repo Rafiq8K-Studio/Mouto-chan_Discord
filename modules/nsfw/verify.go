@@ -1,0 +1,291 @@
+package nsfw
+
+import (
+	"fmt"
+	"log"
+	"strings"
+	"time"
+
+	"discord-bot/internal/commands"
+
+	"github.com/bwmarrin/discordgo"
+)
+
+const (
+	modalCustomID   = "nsfw:modal"
+	componentPrefix = "nsfw:"
+	idCooldown      = 24 * time.Hour
+	failedColor     = 0xED4245
+	approvedColor   = 0x57F287
+)
+
+type Deps struct {
+	GuildID        string
+	VerifChannelID string
+	LogChannelID   string
+	RoleID         string
+	AdminRoleIDs   []string
+	DBPath         string
+}
+
+type module struct {
+	deps Deps
+	st   *Store
+}
+
+func New(deps Deps) commands.Module {
+	m := &module{deps: deps}
+	if deps.DBPath != "" {
+		st, err := Open(deps.DBPath)
+		if err != nil {
+			log.Fatalf("nsfw sqlite: %v", err)
+		}
+		m.st = st
+	}
+	return commands.Module{
+		Command: &discordgo.ApplicationCommand{
+			Name:        "verify",
+			Description: "Verifikasi umur 18+ untuk akses area nsfw",
+		},
+		Slash:           m.onSlash,
+		ModalPrefix:     modalCustomID,
+		Modal:           m.onModal,
+		ComponentPrefix: componentPrefix,
+		Component:       m.onComponent,
+	}
+}
+
+func (m *module) unconfigured(s *discordgo.Session, i *discordgo.InteractionCreate) bool {
+	if m.st == nil {
+		ephemeral(s, i, "Verifikasi belum dikonfig (VERIF_DB_PATH kosong). Hubungi admin.")
+		return true
+	}
+	return false
+}
+
+// onSlash — gerbang tempat: hanya di verification-zone.
+func (m *module) onSlash(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if m.unconfigured(s, i) {
+		return
+	}
+	if m.deps.VerifChannelID != "" && i.ChannelID != m.deps.VerifChannelID {
+		ephemeral(s, i, "Verifikasi hanya boleh di channel <#%s>.", m.deps.VerifChannelID)
+		return
+	}
+	status, attempts, cd, err := m.st.State(user(i))
+	if err != nil {
+		ephemeral(s, i, "Gagal membaca status verifikasi, coba lagi.")
+		return
+	}
+	switch {
+	case status == "verified":
+		ephemeral(s, i, "Kamu sudah terverifikasi 18+ ✅ (role <@&%s>).", m.deps.RoleID)
+		return
+	case status == "blocked":
+		ephemeral(s, i, "Verifikasi diblokir (3x gagal). Hanya admin yang bisa membuka lewat <#%s>.", m.deps.LogChannelID)
+		return
+	case cd > time.Now().Unix():
+		remaining := time.Duration(cd-time.Now().Unix()) * time.Second
+		ephemeral(s, i, "Masih cooldown. Coba lagi dalam %s (attempt %d/3).",
+			remaining.Round(time.Minute), attempts)
+		return
+	}
+
+	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseModal,
+		Data: &discordgo.InteractionResponseData{
+			CustomID: modalCustomID,
+			Title:    "Verifikasi Umur 18+",
+			Components: []discordgo.MessageComponent{
+				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+					discordgo.TextInput{CustomID: "dob", Label: "Tanggal lahir (DD-MM-YYYY)",
+						Style: discordgo.TextInputShort, MinLength: 10, MaxLength: 10,
+						Required: true, Placeholder: "31-12-2000"},
+				}},
+				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+					discordgo.TextInput{CustomID: "confirm", Label: "Ketik SAYA SETUJU untuk konfirmasi",
+						Style: discordgo.TextInputShort, MinLength: 11, MaxLength: 11,
+						Required: true, Placeholder: confirmPhrase},
+				}},
+			},
+		},
+	})
+	if err != nil {
+		log.Printf("nsfw modal respond: %v", err)
+	}
+}
+
+// onModal — gerbang 1 (format) + 2 (umur akun, konfirmasi). Gerbang 3 = admin.
+func (m *module) onModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if m.unconfigured(s, i) {
+		return
+	}
+	data := i.ModalSubmitData()
+	dob := rowValue(data.Components, "dob")
+	confirm := rowValue(data.Components, "confirm")
+
+	created, _ := SnowflakeTime(user(i))
+	ok, reason := Validate(dob, confirm, created, time.Now())
+	if ok {
+		if err := m.grant(s, user(i)); err != nil {
+			log.Printf("nsfw grant: %v", err)
+			ephemeral(s, i, "Gagal memberi role, coba lagi atau hubungi admin.")
+			return
+		}
+		m.sendLog(s, approvedColor, user(i), "LULUS otomatis (semua gerbang lolos)")
+		ephemeral(s, i, "Verifikasi berhasil ✅ Role <@&%s> diberikan.", m.deps.RoleID)
+		return
+	}
+
+	if err := m.st.RecordFail(user(i), time.Now().Add(idCooldown)); err != nil {
+		log.Printf("nsfw record fail: %v", err)
+	}
+	status, attempts, cdUntil, err := m.st.State(user(i))
+	if err != nil {
+		log.Printf("nsfw state: %v", err)
+	}
+	m.sendLog(s, failedColor, user(i), fmt.Sprintf("GAGAL: %s (attempt %d/3)", reason, attempts))
+
+	switch {
+	case status == "blocked":
+		ephemeral(s, i, "Verifikasi ditolak (3x gagal). Menunggu review admin di <#%s>.", m.deps.LogChannelID)
+	case attempts == 1:
+		m.sendApprovalButtons(s, user(i), reason)
+		ephemeral(s, i, "Verifikasi perlu review admin (cek <#%s>). Kalau admin belum memutuskan, kamu bisa coba lagi setelah cooldown 24 jam.", m.deps.LogChannelID)
+	default:
+		ephemeral(s, i, "Verifikasi gagal: %s. Cooldown sampai <t:%d:R>.", reason, cdUntil)
+	}
+}
+
+// onComponent — tombol Approve/Reject admin di verification-log.
+func (m *module) onComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if m.unconfigured(s, i) {
+		return
+	}
+	if !m.isVerifiedAdmin(i) {
+		ephemeral(s, i, "Hanya role admin yang boleh menekan tombol ini.")
+		return
+	}
+	parts := strings.SplitN(i.MessageComponentData().CustomID, ":", 3)
+	if len(parts) != 3 || (parts[1] != "approve" && parts[1] != "reject") {
+		ephemeral(s, i, "Tombol tidak dikenal.")
+		return
+	}
+	target, action := parts[2], parts[1]
+	if action == "approve" {
+		if err := m.grant(s, target); err != nil {
+			log.Printf("nsfw admin grant: %v", err)
+			ephemeral(s, i, "Gagal memberi role.")
+			return
+		}
+		m.sendLog(s, approvedColor, target, "LULUS oleh admin <@"+user(i)+">")
+		editOriginal(s, i, "✅ Approve: <@%s> diberikan role <@&%s>.", target, m.deps.RoleID)
+		return
+	}
+	m.sendLog(s, failedColor, target, "DITOLAK permanen oleh admin <@"+user(i)+">")
+	editOriginal(s, i, "⛔ Reject: <@%s> tetap tidak diverifikasi.", target)
+}
+
+// --- helper (file ini, tidak diekspor) ---
+
+func user(i *discordgo.InteractionCreate) string {
+	if i.Member != nil {
+		return i.Member.User.ID
+	}
+	return i.User.ID
+}
+
+func (m *module) grant(s *discordgo.Session, userID string) error {
+	if err := m.st.MarkVerified(userID); err != nil {
+		return err
+	}
+	if m.deps.RoleID == "" {
+		return nil
+	}
+	return s.GuildMemberRoleAdd(m.deps.GuildID, userID, m.deps.RoleID)
+}
+
+// isVerifiedAdmin fail-closed: AdminRoleIDs kosong -> tidak ada yang bisa approve.
+func (m *module) isVerifiedAdmin(i *discordgo.InteractionCreate) bool {
+	if i.Member == nil || len(m.deps.AdminRoleIDs) == 0 {
+		return false
+	}
+	for _, has := range i.Member.Roles {
+		for _, want := range m.deps.AdminRoleIDs {
+			if has == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (m *module) sendApprovalButtons(s *discordgo.Session, target, reason string) {
+	if m.deps.LogChannelID == "" {
+		return
+	}
+	if _, err := s.ChannelMessageSendComplex(m.deps.LogChannelID, &discordgo.MessageSend{
+		Embeds: []*discordgo.MessageEmbed{{
+			Title:       "Menunggu approval admin",
+			Description: fmt.Sprintf("<@%s> — %s", target, reason),
+			Color:       failedColor,
+		}},
+		Components: []discordgo.MessageComponent{
+			discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+				discordgo.Button{CustomID: "nsfw:approve:" + target, Label: "Approve", Style: discordgo.SuccessButton},
+				discordgo.Button{CustomID: "nsfw:reject:" + target, Label: "Reject", Style: discordgo.DangerButton},
+			}},
+		},
+	}); err != nil {
+		log.Printf("nsfw approval msg: %v", err)
+	}
+}
+
+func (m *module) sendLog(s *discordgo.Session, color int, target, outcome string) {
+	if m.deps.LogChannelID == "" {
+		return
+	}
+	embed := &discordgo.MessageEmbed{
+		Title:       "Verification Log",
+		Description: fmt.Sprintf("User: <@%s>\n%s", target, outcome),
+		Color:       color,
+		Timestamp:   time.Now().Format(time.RFC3339),
+	}
+	if _, err := s.ChannelMessageSendEmbed(m.deps.LogChannelID, embed); err != nil {
+		log.Printf("nsfw log: %v", err)
+	}
+}
+
+func rowValue(comps []discordgo.MessageComponent, customID string) string {
+	for _, c := range comps {
+		if row, ok := c.(*discordgo.ActionsRow); ok {
+			for _, inner := range row.Components {
+				if ti, ok := inner.(*discordgo.TextInput); ok && ti.CustomID == customID {
+					return strings.TrimSpace(ti.Value)
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func ephemeral(s *discordgo.Session, i *discordgo.InteractionCreate, format string, a ...any) {
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: fmt.Sprintf(format, a...),
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	}); err != nil {
+		log.Printf("nsfw respond: %v", err)
+	}
+}
+
+func editOriginal(s *discordgo.Session, i *discordgo.InteractionCreate, format string, a ...any) {
+	newContent := fmt.Sprintf(format, a...)
+	if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Content: &newContent,
+	}); err != nil {
+		log.Printf("nsfw edit: %v", err)
+	}
+}

@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"reflect"
 	"testing"
 )
 
@@ -24,5 +25,16 @@ func TestLoad(t *testing.T) {
 	os.Unsetenv("DISCORD_TOKEN")
 	if _, err := Load(); err == nil {
 		t.Error("Load() tanpa DISCORD_TOKEN harus error")
+	}
+}
+
+func TestIDList(t *testing.T) {
+	got := IDList(" 123, 456 ,,789 ")
+	want := []string{"123", "456", "789"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	if IDList("") != nil {
+		t.Fatal("empty harus nil")
 	}
 }

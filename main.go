@@ -9,6 +9,7 @@ import (
 
 	"discord-bot/config"
 	"discord-bot/internal/commands"
+	"discord-bot/modules/nsfw"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -23,7 +24,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("session: %v", err)
 	}
-	s.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages
+	s.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentsGuildMembers
 
 	var once sync.Once
 	ready := make(chan struct{})
@@ -37,7 +38,15 @@ func main() {
 	}
 
 	<-ready // tunggu READY supaya s.State.User terisi
-	if err := commands.Register(s, cfg.GuildID); err != nil {
+	nsfwModule := nsfw.New(nsfw.Deps{
+		GuildID:        cfg.GuildID,
+		VerifChannelID: cfg.VerifChannelID,
+		LogChannelID:   cfg.LogChannelID,
+		RoleID:         cfg.VerifRoleID,
+		AdminRoleIDs:   config.IDList(cfg.VerifAdminRoleIDs),
+		DBPath:         cfg.DBPath,
+	})
+	if err := commands.Register(s, cfg.GuildID, nsfwModule); err != nil {
 		log.Fatalf("register commands: %v", err)
 	}
 	log.Println("bot berjalan, Ctrl+C untuk stop")
