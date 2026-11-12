@@ -34,6 +34,16 @@ func TestIsAdult(t *testing.T) {
 	}
 }
 
+func TestPersonAge(t *testing.T) {
+	dob := time.Date(2008, 11, 12, 0, 0, 0, 0, time.UTC) // ulang tahun hari ini
+	if PersonAge(dob, now) != 18 {
+		t.Fatal("ulang tahun ke-18 hari ini harus 18")
+	}
+	if PersonAge(time.Date(2008, 11, 13, 0, 0, 0, 0, time.UTC), now) != 17 {
+		t.Fatal("besok ulang tahun harus 17")
+	}
+}
+
 func TestSnowflakeTime(t *testing.T) {
 	ts, ok := SnowflakeTime("175928847299117063") // snowflake 2016 yang dikenal
 	if !ok || ts.Year() != 2016 {

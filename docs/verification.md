@@ -122,7 +122,7 @@ SQLite hanya menyimpan:
 - `status` (pending / approved / rejected / blocked)
 - `cooldown` (waktu boleh retry)
 
-**DOB TIDAK disimpan** — dipakai untuk validasi lalu dibuang.
+**DOB TIDAK disimpan** — dipakai untuk validasi lalu dibuang. Log channel memuat umur self-reported dalam angka tahun (tanggal lahir tetap tidak pernah disimpan/di-log).
 
 ---
 

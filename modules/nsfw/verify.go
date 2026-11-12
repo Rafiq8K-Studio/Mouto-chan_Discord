@@ -204,13 +204,17 @@ func (m *module) onModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	created, _ := SnowflakeTime(user(i))
 	ok, reason := Validate(dob, confirm, created, time.Now())
+	age := 0
+	if pd, err := ParseDOB(dob); err == nil { // DOB tak pernah disimpan — hanya umur numeric
+		age = PersonAge(pd, time.Now())
+	}
 	if ok {
 		if err := m.grant(s, user(i)); err != nil {
 			log.Printf("nsfw grant: %v", err)
 			ephemeral(s, i, "Gagal memberi role, coba lagi atau hubungi admin.")
 			return
 		}
-		m.sendLog(s, approvedColor, user(i), "LULUS otomatis (semua gerbang lolos)")
+		m.sendLog(s, approvedColor, user(i), fmt.Sprintf("LULUS otomatis (semua gerbang lolos) — umur diisi: %d th", age))
 		if m.deps.RoleID == "" {
 			ephemeral(s, i, "Verifikasi tersimpan ✅, tapi VERIF_ROLE_ID belum di-set — hubungi admin.")
 			return
@@ -226,13 +230,13 @@ func (m *module) onModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if err != nil {
 		log.Printf("nsfw state: %v", err)
 	}
-	m.sendLog(s, failedColor, user(i), fmt.Sprintf("GAGAL: %s (attempt %d/3)", reason, attempts))
+	m.sendLog(s, failedColor, user(i), fmt.Sprintf("GAGAL: %s (attempt %d/3) — umur diisi: %d th", reason, attempts, age))
 
 	switch {
 	case status == "blocked":
 		ephemeral(s, i, "Verifikasi ditolak (3x gagal). Menunggu review admin di <#%s>.", m.deps.LogChannelID)
 	case attempts == 1:
-		m.sendApprovalButtons(s, user(i), reason)
+		m.sendApprovalButtons(s, user(i), age, reason)
 		ephemeral(s, i, "Verifikasi perlu review admin (cek <#%s>). Kalau admin belum memutuskan, kamu bisa coba lagi setelah cooldown 24 jam.", m.deps.LogChannelID)
 	default:
 		ephemeral(s, i, "Verifikasi gagal: %s. Cooldown sampai <t:%d:R>.", reason, cdUntil)
@@ -315,14 +319,14 @@ func (m *module) isVerifiedAdmin(i *discordgo.InteractionCreate) bool {
 	return false
 }
 
-func (m *module) sendApprovalButtons(s *discordgo.Session, target, reason string) {
+func (m *module) sendApprovalButtons(s *discordgo.Session, target string, age int, reason string) {
 	if m.deps.LogChannelID == "" {
 		return
 	}
 	if _, err := s.ChannelMessageSendComplex(m.deps.LogChannelID, &discordgo.MessageSend{
 		Embeds: []*discordgo.MessageEmbed{{
 			Title:       "Menunggu approval admin",
-			Description: fmt.Sprintf("<@%s> — %s", target, reason),
+			Description: fmt.Sprintf("User: <@%s> — umur diisi: %d th\n%s", target, age, reason),
 			Color:       failedColor,
 		}},
 		Components: []discordgo.MessageComponent{

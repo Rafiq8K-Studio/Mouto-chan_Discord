@@ -23,6 +23,18 @@ func ParseDOB(s string) (time.Time, error) {
 	return d.UTC(), nil
 }
 
+// PersonAge: umur dalam tahun penuh pada `now`.
+func PersonAge(dob, now time.Time) int {
+	dob = dob.UTC()
+	now = now.UTC()
+	age := now.Year() - dob.Year()
+	anniversary := time.Date(now.Year(), dob.Month(), dob.Day(), 0, 0, 0, 0, time.UTC)
+	if now.Before(anniversary) {
+		age--
+	}
+	return age
+}
+
 // IsAdult: lolos kalau hari ini sudah mencapai ulang tahun ke-18.
 func IsAdult(dob, now time.Time) bool {
 	dob = dob.UTC()
