@@ -181,7 +181,7 @@ func (m *module) openModal(s *discordgo.Session, i *discordgo.InteractionCreate)
 						Required: true, Placeholder: "31-12-2000"},
 				}},
 				discordgo.ActionsRow{Components: []discordgo.MessageComponent{
-					discordgo.TextInput{CustomID: "confirm", Label: "Ketik SAYA SETUJU untuk konfirmasi (Huruf Kapital Semua)",
+					discordgo.TextInput{CustomID: "confirm", Label: "Ketik SAYA SETUJU (Huruf Kapital)",
 						Style: discordgo.TextInputShort, MinLength: 11, MaxLength: 11,
 						Required: true, Placeholder: confirmPhrase},
 				}},
