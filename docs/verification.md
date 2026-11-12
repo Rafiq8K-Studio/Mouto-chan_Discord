@@ -71,8 +71,8 @@ Docker membaca env dari `env_file: .env`. SQLite otomatis dibuat di path `VERIF_
 2. Modal muncul: input **DOB** format `DD-MM-YYYY` + kolom konfirmasi ketik `SAYA SETUJU`.
 3. Bot cek: format DOB, umur ≥ 18, umur akun Discord ≥ 7 hari (dari snowflake ID).
 4. Hasil selalu **ephemeral** (hanya terlihat oleh user):
-   - Lulus → masuk antrean review admin.
-   - Gagal → pesan alasan + info retry/cooldown.
+   - Lulus semua gerbang → role `certified-adult` diberikan **langsung** + embed log "LULUS otomatis" di channel log.
+   - Gagal → pesan alasan + info retry/cooldown (cooldown 24 jam di-set saat ini).
 
 DOB tidak valid atau konfirmasi salah = gagal langsung.
 
@@ -80,20 +80,22 @@ DOB tidak valid atau konfirmasi salah = gagal langsung.
 
 ## 4. Alur Admin
 
-1. Setiap verifikasi baru terkirim ke channel `verification-log` sebagai embed **"Menunggu approval"** dengan tombol **Approve** / **Reject**.
-2. Admin (punya role di `VERIF_ADMIN_ROLE_IDS`) klik tombol:
+1. Tombol **Approve** / **Reject** hanya dikirim **satu kali**: pada **gagal pertama** user, via embed di channel `verification-log` dengan tombol review.
+2. Lulus otomatis = embed log **tanpa tombol**. Gagal ke-2/ke-3 = embed log juga **tanpa tombol**.
+3. Admin (punya role di `VERIF_ADMIN_ROLE_IDS`) klik tombol pada embed gagal pertama:
    - **Approve** → role `certified-adult` diberikan otomatis, embed diupdate.
-   - **Reject** → ditolak, embed diupdate.
-3. Non-admin klik tombol → **ditolak ephemeral** (`ANDA TIDAK BERWENANG`... sesuai pesan bot).
-4. `VERIF_ADMIN_ROLE_IDS` kosong → tombol mati, tak ada yang bisa approve.
+   - **Reject** → ditolak, embed diupdate (cooldown tidak berubah).
+4. Non-admin klik tombol → ditolak ephemeral: "Hanya role admin yang boleh menekan tombol ini."
+5. `VERIF_ADMIN_ROLE_IDS` kosong → tombol mati, tak ada yang bisa approve.
 
 ---
 
 ## 5. Cooldown & Blocked
 
-- Gagal (DOB < 18 / ditolak admin) → **cooldown 24 jam** sebelum boleh `/verify` lagi.
-- **3x gagal** → status **blocked** permanen oleh sistem. User tidak bisa verifikasi lagi.
-- Satu-satunya jalan keluar: **review admin** lewat tombol di `verification-log` (admin bisa minta buka blokir saat memproses kasus).
+- Gagal modal (format/DOB < 18) → **cooldown 24 jam** sebelum boleh `/verify` lagi.
+- **Ditolak admin TIDAK mengubah cooldown** — hanya gagal modal yang men-set cooldown.
+- **3x gagal (attempts == 3)** → status **blocked**. User tidak bisa `/verify` lagi.
+- Status blocked **bukan akhir selamanya**: admin yang menekan **Approve** pada tombol review bisa membuka blokir (user diverifikasi + role diberikan). Tanpa tindakan admin, user tetap blocked.
 
 ---
 
