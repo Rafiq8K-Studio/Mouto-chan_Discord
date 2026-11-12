@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -18,6 +19,22 @@ func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config: %v", err)
+	}
+
+	if cfg.DBPath != "" {
+		var missing []string
+		for name, v := range map[string]string{
+			"VERIF_CHANNEL_ID":     cfg.VerifChannelID,
+			"VERIF_LOG_CHANNEL_ID": cfg.LogChannelID,
+			"VERIF_ROLE_ID":        cfg.VerifRoleID,
+		} {
+			if v == "" {
+				missing = append(missing, name)
+			}
+		}
+		if len(missing) > 0 {
+			log.Fatalf("VERIF_DB_PATH di-set tapi variabel wajib kosong: %s (set semua atau hapus VERIF_DB_PATH)", strings.Join(missing, ", "))
+		}
 	}
 
 	s, err := discordgo.New("Bot " + cfg.Token)

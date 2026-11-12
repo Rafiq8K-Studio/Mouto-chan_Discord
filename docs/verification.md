@@ -46,6 +46,7 @@ VERIF_DB_PATH=./data/verification.db
 Catatan keamanan:
 
 - `VERIF_ADMIN_ROLE_IDS` **kosong = tombol Approve/Reject mati total** (fail-closed). Tidak ada akses timestamp untuk siapa pun.
+- `VERIF_DB_PATH` di-set tapi salah satu `VERIF_CHANNEL_ID` / `VERIF_LOG_CHANNEL_ID` / `VERIF_ROLE_ID` kosong → bot menolak start (fail-closed di startup).
 
 ---
 

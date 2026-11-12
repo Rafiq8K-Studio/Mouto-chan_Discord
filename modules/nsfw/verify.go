@@ -133,6 +133,10 @@ func (m *module) onModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			return
 		}
 		m.sendLog(s, approvedColor, user(i), "LULUS otomatis (semua gerbang lolos)")
+		if m.deps.RoleID == "" {
+			ephemeral(s, i, "Verifikasi tersimpan ✅, tapi VERIF_ROLE_ID belum di-set — hubungi admin.")
+			return
+		}
 		ephemeral(s, i, "Verifikasi berhasil ✅ Role <@&%s> diberikan.", m.deps.RoleID)
 		return
 	}
@@ -171,7 +175,7 @@ func (m *module) onComponent(s *discordgo.Session, i *discordgo.InteractionCreat
 		ephemeral(s, i, "Tombol tidak dikenal.")
 		return
 	}
-	target, action := parts[2], parts[1]
+	target, action, customID := parts[2], parts[1], i.MessageComponentData().CustomID
 	if action == "approve" {
 		if err := m.grant(s, target); err != nil {
 			log.Printf("nsfw admin grant: %v", err)
@@ -179,11 +183,11 @@ func (m *module) onComponent(s *discordgo.Session, i *discordgo.InteractionCreat
 			return
 		}
 		m.sendLog(s, approvedColor, target, "LULUS oleh admin <@"+user(i)+">")
-		editOriginal(s, i, "✅ Approve: <@%s> diberikan role <@&%s>.", target, m.deps.RoleID)
+		m.editDecision(s, i, customID, action, "✅ Approve: <@%s> diberikan role <@&%s>.", target, m.deps.RoleID)
 		return
 	}
 	m.sendLog(s, failedColor, target, "DITOLAK permanen oleh admin <@"+user(i)+">")
-	editOriginal(s, i, "⛔ Reject: <@%s> tetap tidak diverifikasi.", target)
+	m.editDecision(s, i, customID, action, "⛔ Reject: <@%s> tetap tidak diverifikasi.", target)
 }
 
 // --- helper (file ini, tidak diekspor) ---
@@ -281,10 +285,21 @@ func ephemeral(s *discordgo.Session, i *discordgo.InteractionCreate, format stri
 	}
 }
 
-func editOriginal(s *discordgo.Session, i *discordgo.InteractionCreate, format string, a ...any) {
+// editDecision — update pesan log: isi hasil + tombol Approve/Reject jadi disabled.
+func (m *module) editDecision(s *discordgo.Session, i *discordgo.InteractionCreate, customID, action, format string, a ...any) {
 	newContent := fmt.Sprintf(format, a...)
+	label, style := "Reject", discordgo.DangerButton
+	if action == "approve" {
+		label, style = "Approve", discordgo.SuccessButton
+	}
+	disabled := []discordgo.MessageComponent{
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			discordgo.Button{CustomID: customID, Label: label, Style: style, Disabled: true},
+		}},
+	}
 	if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-		Content: &newContent,
+		Content:    &newContent,
+		Components: &disabled,
 	}); err != nil {
 		log.Printf("nsfw edit: %v", err)
 	}
