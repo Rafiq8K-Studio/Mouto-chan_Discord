@@ -1,8 +1,49 @@
 package commands
 
-import "github.com/bwmarrin/discordgo"
+import (
+	"log"
 
-// ponytail: stub agar main compile; Task 3 ganti dengan registry command asli.
+	"discord-bot/modules/ping"
+
+	"github.com/bwmarrin/discordgo"
+)
+
+// registry: tambahkan modul baru di sini — satu baris per modul.
+var modules = []struct {
+	Command *discordgo.ApplicationCommand
+	Handler func(*discordgo.Session, *discordgo.InteractionCreate)
+}{
+	{ping.Command(), ping.Handler},
+}
+
 func Register(s *discordgo.Session, guildID string) error {
+	registeredCmds := make([]*discordgo.ApplicationCommand, 0, len(modules))
+
+	s.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		if i.Type != discordgo.InteractionApplicationCommand {
+			return
+		}
+		for _, m := range modules {
+			if m.Command.Name == i.ApplicationCommandData().Name {
+				m.Handler(s, i)
+				return
+			}
+		}
+	})
+
+	for _, m := range modules {
+		var cmd *discordgo.ApplicationCommand
+		var err error
+		if guildID != "" {
+			cmd, err = s.ApplicationCommandCreate(s.State.User.ID, guildID, m.Command)
+		} else {
+			cmd, err = s.ApplicationCommandCreate(s.State.User.ID, "", m.Command)
+		}
+		if err != nil {
+			return err
+		}
+		registeredCmds = append(registeredCmds, cmd)
+		log.Printf("slash command terdaftar: /%s", cmd.Name)
+	}
 	return nil
 }
