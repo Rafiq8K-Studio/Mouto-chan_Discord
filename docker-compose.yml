@@ -1,6 +1,8 @@
 services:
   bot:
-    build: .
+    build:
+      context: .
+      target: dev # ganti ke prod untuk binary saja (tanpa air)
     env_file: .env # secret lewat .env, tidak ada di compose
     volumes:
       - .:/app

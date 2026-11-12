@@ -1,0 +1,13 @@
+# Deploy: build di server, tanpa registry/pre-build.
+# Pemakaian: docker compose -f docker-compose.prod.yml up -d --build
+services:
+  bot:
+    build:
+      context: .
+      target: prod
+    env_file: .env
+    restart: unless-stopped
+    volumes:
+      - data:/app/data # sqlite verifikasi
+volumes:
+  data:
