@@ -30,13 +30,7 @@ func Register(s *discordgo.Session, guildID string) error {
 	})
 
 	for _, m := range modules {
-		var cmd *discordgo.ApplicationCommand
-		var err error
-		if guildID != "" {
-			cmd, err = s.ApplicationCommandCreate(s.State.User.ID, guildID, m.Command)
-		} else {
-			cmd, err = s.ApplicationCommandCreate(s.State.User.ID, "", m.Command)
-		}
+		cmd, err := s.ApplicationCommandCreate(s.State.User.ID, guildID, m.Command)
 		if err != nil {
 			return err
 		}
