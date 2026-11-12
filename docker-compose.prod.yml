@@ -1,10 +1,8 @@
-# Deploy: build di server, tanpa registry/pre-build.
-# Pemakaian: docker compose -f docker-compose.prod.yml up -d --build
+# Deploy: build oleh GitHub Actions → GHCR, tinggal pull.
+# Pemakaian: docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
 services:
   bot:
-    build:
-      context: .
-      target: prod
+    image: ghcr.io/rafiq8k-studio/mouto-chan_discord:latest
     env_file: .env
     restart: unless-stopped
     volumes:
