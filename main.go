@@ -63,7 +63,15 @@ func main() {
 		AdminRoleIDs:   config.IDList(cfg.VerifAdminRoleIDs),
 		DBPath:         cfg.DBPath,
 	})
-	if err := commands.Register(s, cfg.GuildID, nsfwModule); err != nil {
+	panelModule := nsfw.NewPanel(nsfw.Deps{
+		GuildID:        cfg.GuildID,
+		VerifChannelID: cfg.VerifChannelID,
+		LogChannelID:   cfg.LogChannelID,
+		RoleID:         cfg.VerifRoleID,
+		AdminRoleIDs:   config.IDList(cfg.VerifAdminRoleIDs),
+		DBPath:         cfg.DBPath,
+	})
+	if err := commands.Register(s, cfg.GuildID, nsfwModule, panelModule); err != nil {
 		log.Fatalf("register commands: %v", err)
 	}
 	log.Println("bot berjalan, Ctrl+C untuk stop")

@@ -18,3 +18,16 @@ func TestNewModuleShape(t *testing.T) {
 		t.Fatalf("ComponentPrefix=%q", m.ComponentPrefix)
 	}
 }
+
+func TestNewPanelShape(t *testing.T) {
+	m := NewPanel(Deps{})
+	if m.Command == nil || m.Command.Name != "verify-setup" {
+		t.Fatalf("command /verify-setup tidak terdaftar: %+v", m.Command)
+	}
+	if m.Slash == nil || m.Component == nil {
+		t.Fatal("handler Slash/Component wajib terisi")
+	}
+	if m.ComponentPrefix != "nsfw:" {
+		t.Fatalf("ComponentPrefix=%q (tombol panel harus route)", m.ComponentPrefix)
+	}
+}

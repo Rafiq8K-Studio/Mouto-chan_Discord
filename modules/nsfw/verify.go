@@ -55,6 +55,72 @@ func New(deps Deps) commands.Module {
 	}
 }
 
+// NewPanel — modul kedua: /verify-setup + tombol nsfw:start (panel verifikasi).
+func NewPanel(deps Deps) commands.Module {
+	m := &module{deps: deps}
+	if deps.DBPath != "" {
+		st, err := Open(deps.DBPath)
+		if err != nil {
+			log.Fatalf("nsfw sqlite: %v", err)
+		}
+		m.st = st
+	}
+	return commands.Module{
+		Command: &discordgo.ApplicationCommand{
+			Name:        "verify-setup",
+			Description: "Pasang panel tombol verifikasi di channel ini (khusus verification-zone)",
+		},
+		Slash:           m.onPost,
+		ComponentPrefix: componentPrefix, // user test: prefix route "nsfw:" (bukan "nsfw:start")
+		Component:       m.onStart,
+	}
+}
+
+// onStart — tombol panel, siapa pun boleh menekan (di verification-zone).
+func (m *module) onStart(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if m.unconfigured(s, i) {
+		return
+	}
+	if m.deps.VerifChannelID != "" && i.ChannelID != m.deps.VerifChannelID {
+		ephemeral(s, i, "Verifikasi hanya boleh di channel <#%s>.", m.deps.VerifChannelID)
+		return
+	}
+	if !m.passedPreModalChecks(s, i) {
+		return
+	}
+	m.openModal(s, i)
+}
+
+// onPost — pasang panel tombol verifikasi di verification-zone.
+func (m *module) onPost(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if m.unconfigured(s, i) {
+		return
+	}
+	if m.deps.VerifChannelID == "" || i.ChannelID != m.deps.VerifChannelID {
+		ephemeral(s, i, "Panel hanya bisa dipasang di channel <#%s>.", m.deps.VerifChannelID)
+		return
+	}
+	embed := &discordgo.MessageEmbed{
+		Title:       "🔐 Verifikasi Area 18+",
+		Description: "Tekan tombol di bawah untuk memulai verifikasi.\nKamu akan diminta mengisi tanggal lahir (DD-MM-YYYY) dan mengetik konfirmasi.\nHasil hanya terlihat olehmu (ephemeral).",
+		Color:       0x5865F2,
+	}
+	if _, err := s.ChannelMessageSendComplex(m.deps.VerifChannelID, &discordgo.MessageSend{
+		Embeds: []*discordgo.MessageEmbed{embed},
+		Components: []discordgo.MessageComponent{
+			discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+				discordgo.Button{CustomID: "nsfw:start", Label: "Verifikasi 18+", Style: discordgo.PrimaryButton,
+					Emoji: &discordgo.ComponentEmoji{Name: "✅"}},
+			}},
+		},
+	}); err != nil {
+		log.Printf("nsfw panel send: %v", err)
+		ephemeral(s, i, "Gagal mengirim panel, coba lagi.")
+		return
+	}
+	ephemeral(s, i, "Panel terpasang.")
+}
+
 func (m *module) unconfigured(s *discordgo.Session, i *discordgo.InteractionCreate) bool {
 	if m.st == nil {
 		ephemeral(s, i, "Verifikasi belum dikonfig (VERIF_DB_PATH kosong). Hubungi admin.")
@@ -72,26 +138,38 @@ func (m *module) onSlash(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		ephemeral(s, i, "Verifikasi hanya boleh di channel <#%s>.", m.deps.VerifChannelID)
 		return
 	}
+	if !m.passedPreModalChecks(s, i) {
+		return
+	}
+	m.openModal(s, i)
+}
+
+// passedPreModalChecks — gerbang status (verified/blocked/cooldown), dipakai
+// onSlash dan onStart. Return true kalau boleh lanjut ke modal.
+func (m *module) passedPreModalChecks(s *discordgo.Session, i *discordgo.InteractionCreate) bool {
 	status, attempts, cd, err := m.st.State(user(i))
 	if err != nil {
 		ephemeral(s, i, "Gagal membaca status verifikasi, coba lagi.")
-		return
+		return false
 	}
 	switch {
 	case status == "verified":
 		ephemeral(s, i, "Kamu sudah terverifikasi 18+ ✅ (role <@&%s>).", m.deps.RoleID)
-		return
+		return false
 	case status == "blocked":
 		ephemeral(s, i, "Verifikasi diblokir (3x gagal). Hanya admin yang bisa membuka lewat <#%s>.", m.deps.LogChannelID)
-		return
+		return false
 	case cd > time.Now().Unix():
 		remaining := time.Duration(cd-time.Now().Unix()) * time.Second
 		ephemeral(s, i, "Masih cooldown. Coba lagi dalam %s (attempt %d/3).",
 			remaining.Round(time.Minute), attempts)
-		return
+		return false
 	}
+	return true
+}
 
-	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+func (m *module) openModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseModal,
 		Data: &discordgo.InteractionResponseData{
 			CustomID: modalCustomID,
@@ -161,33 +239,46 @@ func (m *module) onModal(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 }
 
-// onComponent — tombol Approve/Reject admin di verification-log.
+// onComponent — tombol: nsfw:start (siapa pun) + Approve/Reject (admin).
 func (m *module) onComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if m.unconfigured(s, i) {
 		return
 	}
-	if !m.isVerifiedAdmin(i) {
-		ephemeral(s, i, "Hanya role admin yang boleh menekan tombol ini.")
-		return
+	id := i.MessageComponentData().CustomID
+	parts := strings.SplitN(id, ":", 2)
+	action := ""
+	if len(parts) == 2 {
+		action = parts[1]
 	}
-	parts := strings.SplitN(i.MessageComponentData().CustomID, ":", 3)
-	if len(parts) != 3 || (parts[1] != "approve" && parts[1] != "reject") {
-		ephemeral(s, i, "Tombol tidak dikenal.")
-		return
-	}
-	target, action, customID := parts[2], parts[1], i.MessageComponentData().CustomID
-	if action == "approve" {
-		if err := m.grant(s, target); err != nil {
-			log.Printf("nsfw admin grant: %v", err)
-			ephemeral(s, i, "Gagal memberi role.")
+	switch action {
+	case "start":
+		m.onStart(s, i)
+	case "approve", "reject":
+		if !m.isVerifiedAdmin(i) {
+			ephemeral(s, i, "Hanya role admin yang boleh menekan tombol ini.")
 			return
 		}
-		m.sendLog(s, approvedColor, target, "LULUS oleh admin <@"+user(i)+">")
-		m.editDecision(s, i, customID, action, "✅ Approve: <@%s> diberikan role <@&%s>.", target, m.deps.RoleID)
-		return
+		tp := strings.SplitN(id, ":", 3)
+		if len(tp) != 3 {
+			ephemeral(s, i, "Tombol tidak dikenal.")
+			return
+		}
+		target, customID := tp[2], id
+		if action == "approve" {
+			if err := m.grant(s, target); err != nil {
+				log.Printf("nsfw admin grant: %v", err)
+				ephemeral(s, i, "Gagal memberi role.")
+				return
+			}
+			m.sendLog(s, approvedColor, target, "LULUS oleh admin <@"+user(i)+">")
+			m.editDecision(s, i, customID, action, "✅ Approve: <@%s> diberikan role <@&%s>.", target, m.deps.RoleID)
+			return
+		}
+		m.sendLog(s, failedColor, target, "DITOLAK permanen oleh admin <@"+user(i)+">")
+		m.editDecision(s, i, customID, action, "⛔ Reject: <@%s> tetap tidak diverifikasi.", target)
+	default:
+		ephemeral(s, i, "Tombol tidak dikenal.")
 	}
-	m.sendLog(s, failedColor, target, "DITOLAK permanen oleh admin <@"+user(i)+">")
-	m.editDecision(s, i, customID, action, "⛔ Reject: <@%s> tetap tidak diverifikasi.", target)
 }
 
 // --- helper (file ini, tidak diekspor) ---

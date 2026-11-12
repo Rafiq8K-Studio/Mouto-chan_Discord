@@ -77,6 +77,13 @@ Docker membaca env dari `env_file: .env`. SQLite otomatis dibuat di path `VERIF_
 
 DOB tidak valid atau konfirmasi salah = gagal langsung.
 
+### 3a. Panel Tombol (jalur alternatif)
+
+1. Admin pasang panel: jalankan `/verify-setup` di `verification-zone`.
+2. Bot kirim embed "🔐 Verifikasi Area 18+" dengan tombol **✅ Verifikasi 18+** (`nsfw:start`).
+3. User tekan tombol → langsung modal (gerbang tempat + status verified/blocked/cooldown sama dengan `/verify`, semua ephemeral).
+4. Modal, validasi, dan alur admin identik dengan jalur `/verify` — dua jalur masuk, satu alur.
+
 ---
 
 ## 4. Alur Admin

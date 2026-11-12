@@ -60,19 +60,25 @@ func Register(s *discordgo.Session, guildID string, extra ...Module) error {
 }
 
 func findModal(mods []Module, customID string) func(*discordgo.Session, *discordgo.InteractionCreate) {
+	// Terpanjang menang: prefix lebih spesifik dipilih di antara semua yang cocok.
+	var handler func(*discordgo.Session, *discordgo.InteractionCreate)
+	best := -1
 	for _, m := range mods {
-		if m.Modal != nil && strings.HasPrefix(customID, m.ModalPrefix) {
-			return m.Modal
+		if m.Modal != nil && strings.HasPrefix(customID, m.ModalPrefix) && len(m.ModalPrefix) > best {
+			handler, best = m.Modal, len(m.ModalPrefix)
 		}
 	}
-	return nil
+	return handler
 }
 
 func findComponent(mods []Module, customID string) func(*discordgo.Session, *discordgo.InteractionCreate) {
+	// Terpanjang menang: prefix lebih spesifik dipilih di antara semua yang cocok.
+	var handler func(*discordgo.Session, *discordgo.InteractionCreate)
+	best := -1
 	for _, m := range mods {
-		if m.Component != nil && strings.HasPrefix(customID, m.ComponentPrefix) {
-			return m.Component
+		if m.Component != nil && strings.HasPrefix(customID, m.ComponentPrefix) && len(m.ComponentPrefix) > best {
+			handler, best = m.Component, len(m.ComponentPrefix)
 		}
 	}
-	return nil
+	return handler
 }

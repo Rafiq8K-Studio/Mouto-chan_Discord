@@ -45,3 +45,31 @@ func TestFindComponent(t *testing.T) {
 		t.Fatalf("called=%q", called)
 	}
 }
+
+func TestLongestPrefixRouting(t *testing.T) {
+	broader := Module{
+		ComponentPrefix: "nsfw:",
+		Component:       func(*discordgo.Session, *discordgo.InteractionCreate) { called = "verify-comp" },
+	}
+	start := Module{
+		ComponentPrefix: "nsfw:start",
+		Component:       func(*discordgo.Session, *discordgo.InteractionCreate) { called = "start-comp" },
+	}
+	mods := []Module{broader, start}
+	h := findComponent(mods, "nsfw:start")
+	if h == nil {
+		t.Fatal("handler 'nsfw:start' tidak ketemu")
+	}
+	h(nil, nil)
+	if called != "start-comp" {
+		t.Fatalf("customID 'nsfw:start' harus ke prefix terpanjang, called=%q", called)
+	}
+	h = findComponent(mods, "nsfw:approve:123")
+	if h == nil {
+		t.Fatal("handler 'nsfw:' tidak ketemu")
+	}
+	h(nil, nil)
+	if called != "verify-comp" {
+		t.Fatalf("customID 'nsfw:approve:123' harus ke prefix 'nsfw:', called=%q", called)
+	}
+}
