@@ -21,3 +21,8 @@ vendor/
 go.work
 
 .env
+# Bot
+.env
+tmp/
+bot
+discord-bot
